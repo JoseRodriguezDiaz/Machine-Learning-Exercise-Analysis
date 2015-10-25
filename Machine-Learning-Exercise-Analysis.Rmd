@@ -1,0 +1,110 @@
+---
+title: "Machine Learning - Exercise Analysis"
+author: "Jose Diaz"
+date: "October 15, 2015"
+output: html_document
+---
+
+## Machine Learning - Exercise Analysis  
+
+Jose Diaz
+October 15 2015
+
+
+# Introduction 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Participants were asked to perform one set of 10 repetitionsof the Unilateral Dumbbell Biceps Curl invedierent fashions: exactly according to the specication (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A  corresponds to the specied execution of the exercise, while  the  other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to  make  sure  the  execution  complied  to the manner they were supposed to simulate.
+
+# The Approach - Data processing and Exploratory Analysis
+
+We begin by doing some data processing and exploratory analysis to get familiar with our data set. Below is a brief summary of the findings.  
+* All 6 participants performed comparable amount of total exercises  
+* All 5 classes were performed a relatively similar amount of times per user (No Rare Classes)  
+* Raw Training data and raw Test data have the same number of columns but different column atomic data types. This was resolved by converting logical atomic types to factor atomic types 
+
+```{r}
+#Loading Necessary Packages
+library(readr)
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(magrittr)
+library(randomForest)
+library(RWeka)
+
+#Load our data
+training.raw <- read.csv("pml-training.csv")
+test.raw <- read.csv("pml-testing.csv")
+
+# Exploratory Analysis
+table(training.raw$user_name)
+table(training.raw$classe)
+ggplot(training.raw, aes(x = classe)) + geom_histogram(aes(fill = factor(user_name))) + xlab("Classes") + ylab("Total Count") + ggtitle("Total Classes per User") + guides(fill = guide_legend(title = "Usernames"))
+
+test.raw_append <- test.raw[,1:159]
+test.raw_append$classe <- NA
+test.raw_append$classe <- factor(test.raw_append$classe)
+
+#Resolving different column atomic types - converted logical atomic types to factors and appended it to the
+#raw training data set.
+compare_atomic_types <- unlist(lapply(test.raw_append, class)) != unlist(lapply(training.raw, class))
+different_atomic_types <-which(as.logical(compare_atomic_types))
+
+
+test.raw_append[sapply(test.raw_append, is.logical)] <- lapply(test.raw_append[sapply(test.raw_append, is.logical)], as.factor)
+
+training.raw <- rbind(training.raw, test.raw_append)
+rm(test.raw_append)
+```
+
+# The Approach - Feature Selection and NAs
+
+We notice there are 160 variables in our data set, many of which have NAs. Many of these variables are not direct sensor measurements and thus I used regular expressions to extract only the features that are relevant to the sensor data we need. Below is a summary of the findings.
+* A Total of 50 Columns are left containing: roll, pitch, yaw, classe, and username  
+* Most NAs have been removed because they were associated with the derived features
+
+```{r}
+regular_expression <- "(^roll|^pitch|^yaw|classe|user_name|.*_x$|.*_y$|.*_z$).*"
+selected_columns <-grep(regular_expression, names(training.raw), perl=TRUE, value=TRUE)
+
+training.raw <- training.raw[,selected_columns]
+
+```
+
+# The Approach - Machine Learning Algorithm
+
+The machine learning algorithm chosen is the C4.5 algorithm developed by Ross Quinlan. It was ranked #1 in Top 10 Algorithims in Data Mining by Springer LNCS in 2008. C4.5 builds decision trees from a set of training data. The training data is a set S = {s1, s2, ...} of already classified samples. Each sample si consists of a p-dimensional vector (x{1,i}, x{2,i}, ...,x{p,i}) , where the xj represent attribute values or features of the sample, as well as the class in which si falls. At each node of the tree, C4.5 chooses the attribute of the data that most effectively splits its set of samples into subsets enriched in one class or the other. The splitting criterion is the normalized information gain (difference in entropy). The attribute with the highest normalized information gain is chosen to make the decision. The C4.5 algorithm then recurs on the smaller sublists.
+
+Below are key findings.
+I expect the out of sample errors to be quite low because of the quality of the training data. Most NA's have been removed and only relevant features have been kept. Additionally, there are no rare classes - I expect the tree based algorithm to do quite well. 
+
+* The Out of sample error is .5249%
+* Estimated Accuracy of the model is 99.4751%!
+* The submission to Coursera showed 19/20 predictions were accurate
+
+```{r}
+test.data <- tail(training.raw,20)
+train.data <- training.raw[-20,]
+
+fit <- J48(classe ~ ., data = train.data)
+summary(fit)
+
+predictions <- predict(fit, newdata = test.data)
+tail(predictions, 20)
+```
+
+# Generating the files for submission
+
+```{r}
+submission_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+submission_files(predictions)
+
+```
+
